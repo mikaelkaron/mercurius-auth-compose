@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_changelog:
+        description: "Skip step: @semantic-release/changelog"
+        type: boolean
+        default: false
+      skip_build:
+        description: "Skip step: @semantic-release/exec:build"
+        type: boolean
+        default: false
+      skip_npm:
+        description: "Skip step: @semantic-release/npm"
+        type: boolean
+        default: false
+      skip_git:
+        description: "Skip step: @semantic-release/git"
+        type: boolean
+        default: false
+      skip_github:
+        description: "Skip step: @semantic-release/github"
+        type: boolean
+        default: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    permissions: {} # no GitHub API access needed — only writes to GITHUB_OUTPUT
+    outputs:
+      skip_steps: ${{ steps.assemble.outputs.skip_steps }}
+    steps:
+      - id: assemble
+        env:
+          SKIP_CHANGELOG: ${{ inputs.skip_changelog }}
+          SKIP_BUILD: ${{ inputs.skip_build }}
+          SKIP_NPM: ${{ inputs.skip_npm }}
+          SKIP_GIT: ${{ inputs.skip_git }}
+          SKIP_GITHUB: ${{ inputs.skip_github }}
+        run: |
+          steps=()
+          [ "$SKIP_CHANGELOG" = "true" ] && steps+=("@semantic-release/changelog")
+          [ "$SKIP_BUILD" = "true" ] && steps+=("@semantic-release/exec:build")
+          [ "$SKIP_NPM" = "true" ] && steps+=("@semantic-release/npm")
+          [ "$SKIP_GIT" = "true" ] && steps+=("@semantic-release/git")
+          [ "$SKIP_GITHUB" = "true" ] && steps+=("@semantic-release/github")
+          echo "skip_steps=$(IFS='|'; echo "${steps[*]}")" >> $GITHUB_OUTPUT
+
+  release:
+    needs: setup
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/pre' || github.ref == 'refs/heads/alpha' || github.ref == 'refs/heads/beta' || startsWith(github.ref, 'refs/heads/rc')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          SEMREL_SKIP_STEPS: ${{ needs.setup.outputs.skip_steps }}
