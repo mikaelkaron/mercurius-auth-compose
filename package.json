@@ -1,6 +1,6 @@
 {
   "name": "mercurius-auth-compose",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "AND/OR composition of auth checks for mercurius-auth — the @fastify/auth-style relation combinator mercurius lacks. Ships no checks; you bring the check functions.",
   "keywords": [
     "mercurius",
