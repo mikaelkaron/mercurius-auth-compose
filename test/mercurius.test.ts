@@ -7,6 +7,7 @@ import {
   composedDirectiveSdl,
   createDirectiveAuth,
   createExternalAuth,
+  UNAUTHORIZED_CODE,
   type ComposedPolicy
 } from '../src/mercurius.ts'
 
@@ -101,6 +102,15 @@ describe('createDirectiveAuth', () => {
     const app = await build()
     expect((await query(app, 'mutation { orAny }', { 'x-scopes': 'b' })).data?.orAny).toBe(true)
     expect((await query(app, 'mutation { orAny }', { 'x-scopes': 'z' })).errors).toBeTruthy()
+  })
+
+  it('the default denial surfaces a coded, mercurius-shaped error (extensions.code)', async () => {
+    const app = await build() // no onDeny → defaultDeny
+    const res = (await query(app, 'mutation { orAny }', { 'x-scopes': 'z' })) as {
+      errors?: { message: string; extensions?: { code?: string } }[]
+    }
+    expect(res.errors?.[0]?.message).toBe('Unauthorized')
+    expect(res.errors?.[0]?.extensions?.code).toBe(UNAUTHORIZED_CODE)
   })
 
   it('AND requires every check', async () => {

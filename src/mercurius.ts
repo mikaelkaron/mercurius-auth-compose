@@ -24,7 +24,23 @@ export type ApplyPolicy<P> = ApplyPolicyHandler<unknown, unknown, MercuriusConte
  * "held-strings overlap" model. Override via {@link DirectiveComposedAuthOptions.checkInput}. */
 export const DEFAULT_CHECK_INPUT = 'targets: [String!]!'
 
-const defaultDeny = (): Error => new Error('Unauthorized')
+/** `extensions.code` of the fallback denial. */
+export const UNAUTHORIZED_CODE = 'UNAUTHORIZED'
+
+/**
+ * The fallback denial used when a consumer provides no
+ * {@link ComposedAuthOptions.onDeny}. It is shaped like a mercurius
+ * `ErrorWithProps` — an `extensions.code` plus a `statusCode`, which is exactly
+ * what mercurius reads (duck-typed) to build the GraphQL field error — but is not
+ * imported from mercurius, so this combinator stays framework-agnostic (mercurius
+ * is an optional peer). Consumers typically pass their own `onDeny` returning a
+ * real `ErrorWithProps`.
+ */
+export const defaultDeny = (): Error =>
+  Object.assign(new Error('Unauthorized'), {
+    extensions: { code: UNAUTHORIZED_CODE },
+    statusCode: 401
+  })
 
 /** Seams shared by both modes — the check-specific behaviour the caller injects. */
 export interface ComposedAuthOptions<Check, Prepared = MercuriusContext> {
@@ -42,7 +58,9 @@ export interface ComposedAuthOptions<Check, Prepared = MercuriusContext> {
    */
   prepare?: (context: MercuriusContext) => Prepared | Promise<Prepared>
   /** The Error returned when composition denies (empty checks, or the relation
-   * verdict is false). Default: a generic `Unauthorized`. */
+   * verdict is false). Default {@link defaultDeny} — a coded `Unauthorized`
+   * (`extensions.code` + `401`). Pass your own (e.g. a mercurius `ErrorWithProps`)
+   * to control the surfaced code/status. */
   onDeny?: () => Error
   /** Relation applied when a field omits its own. Default {@link DEFAULT_RELATION} (`'or'`). */
   defaultRelation?: Relation

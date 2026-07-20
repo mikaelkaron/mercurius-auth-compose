@@ -40,6 +40,7 @@
     "prebuild": "npm run clean",
     "build": "tsc -b tsconfig.json",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.test.json",
     "release": "semantic-release"
   },
