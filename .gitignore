@@ -1,0 +1,10 @@
+node_modules
+dist
+reports
+*.log
+coverage
+.DS_Store
+
+# Dev-only marker so this package resolves as its own pnpm root while it lives
+# nested inside another workspace during development; not needed in the standalone repo.
+pnpm-workspace.yaml

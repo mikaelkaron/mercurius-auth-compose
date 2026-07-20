@@ -1,0 +1,75 @@
+{
+  "name": "mercurius-auth-compose",
+  "version": "0.1.0",
+  "description": "AND/OR composition of auth checks for mercurius-auth — the @fastify/auth-style relation combinator mercurius lacks. Ships no checks; you bring the check functions.",
+  "keywords": [
+    "mercurius",
+    "mercurius-auth",
+    "fastify",
+    "graphql",
+    "authorization",
+    "auth",
+    "directive",
+    "policy",
+    "compose"
+  ],
+  "license": "MIT",
+  "author": "Mikael Karon",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikaelkaron/mercurius-auth-compose.git"
+  },
+  "homepage": "https://github.com/mikaelkaron/mercurius-auth-compose#readme",
+  "bugs": {
+    "url": "https://github.com/mikaelkaron/mercurius-auth-compose/issues"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist node_modules/.tmp",
+    "prebuild": "pnpm run clean",
+    "build": "tsc -b tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "peerDependencies": {
+    "graphql": ">=16",
+    "mercurius": ">=15",
+    "mercurius-auth": ">=6"
+  },
+  "peerDependenciesMeta": {
+    "graphql": {
+      "optional": true
+    },
+    "mercurius": {
+      "optional": true
+    },
+    "mercurius-auth": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "fastify": "^5.8.5",
+    "graphql": "^16.0.0",
+    "mercurius": "^16.9.0",
+    "mercurius-auth": "^6.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "//": "The core `compose` combinator has ZERO dependencies. The mercurius layer imports mercurius/mercurius-auth/graphql for TYPES ONLY (no runtime import), so they are OPTIONAL peers — a consumer using only `compose` needs none of them; a consumer using the mercurius factories already has them."
+}
