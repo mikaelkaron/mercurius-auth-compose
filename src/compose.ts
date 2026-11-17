@@ -6,15 +6,28 @@
  *
  * @packageDocumentation
  */
+import { InvalidOptionsError } from './errors.js'
 
 /** How a list of checks combines. */
 export type Relation = 'and' | 'or'
+
+/**
+ * How many checks run: `'first'` stops at the first check that decides the
+ * outcome, `'all'` evaluates every check, concurrently.
+ */
+export type Run = 'all' | 'first'
 
 /**
  * Default composition when a policy omits the relation. Matches `@fastify/auth`'s
  * own default so REST and GraphQL surfaces agree.
  */
 export const DEFAULT_RELATION: Relation = 'or'
+
+/**
+ * Default number of checks that run. Matches `@fastify/auth`'s own default, so an
+ * expensive check does not run once a cheaper one has already decided.
+ */
+export const DEFAULT_RUN: Run = 'first'
 
 /**
  * A single check: a predicate over an arbitrary context `C`, returning whether
@@ -32,17 +45,37 @@ export type Predicate<C> = (ctx: C) => boolean | Promise<boolean>
  *   unvalidated value from a plain-JS host (e.g. `'AND'` in the wrong case) can
  *   never fail open.
  *
+ * With `run: 'first'` (the default) the checks run in order and evaluation stops
+ * at the first check that decides the outcome: one that passes under OR, or one
+ * that fails under AND. With `run: 'all'` every check runs, concurrently, so a
+ * check's side effects, if any, always run.
+ *
  * The returned value is itself a {@link Predicate}, so compositions nest for free:
  * `compose([a, b, compose([c, d], 'and')], 'or')` = `a OR b OR (c AND d)` — with
  * no depth limit (unlike `@fastify/auth`'s single level of sub-arrays).
- *
- * All checks are evaluated (no short-circuit), so a check's side effects, if any,
- * always run; the verdict is then reduced.
  */
-export const compose =
-  <C>(checks: readonly Predicate<C>[], relation: Relation = DEFAULT_RELATION): Predicate<C> =>
-  async (ctx: C): Promise<boolean> => {
+export const compose = <C>(
+  checks: readonly Predicate<C>[],
+  relation: Relation = DEFAULT_RELATION,
+  run: Run = DEFAULT_RUN
+): Predicate<C> => {
+  if (!Array.isArray(checks)) throw new InvalidOptionsError('checks must be an array.')
+
+  // Under OR the first check that passes decides the outcome, under AND the first
+  // check that fails does.
+  const decisive = relation === 'or'
+
+  return async (ctx: C): Promise<boolean> => {
     if (checks.length === 0) return false
+
+    if (run === 'first') {
+      for (const check of checks) {
+        if (Boolean(await check(ctx)) === decisive) return decisive
+      }
+      return !decisive
+    }
+
     const results = await Promise.all(checks.map((check) => check(ctx)))
-    return relation === 'or' ? results.some(Boolean) : results.every(Boolean)
+    return decisive ? results.some(Boolean) : results.every(Boolean)
   }
+}
