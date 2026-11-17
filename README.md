@@ -30,6 +30,7 @@ await guard(ctx) // true if A or B passes
 - **OR** grants if any passes; **AND** only if every passes.
 - An **empty list denies**.
 - **Fail-closed**: any relation that isn't exactly `'or'` combines as AND.
+- **Short-circuits** by default, as `@fastify/auth` does: `run: 'first'` runs the checks in order and stops at the first that decides (a pass under OR, a failure under AND). `compose(checks, relation, 'all')` runs every check, concurrently.
 - Compositions **nest for free** (no depth limit): `compose([a, b, compose([c, d], 'and')], 'or')`.
 
 ## Mercurius directive mode
@@ -51,7 +52,7 @@ const { applyPolicy, sdl, directive } = createDirectiveAuth<{ scope: string }, s
     if (field?.value.kind !== 'StringValue') throw new Error('scope must be a string')
     return { scope: field.value.value }
   },
-  // derive the caller's held scopes once per field
+  // derive the caller's held scopes once per request
   prepare: (ctx) => (ctx.reply.request.headers['x-scopes'] as string ?? '').split(',').filter(Boolean),
   // judge one check
   evaluate: (check, held) => held.includes(check.scope)
@@ -63,7 +64,7 @@ await app.graphql.extendSchema(sdl) // defines @auth(checks:[AuthCheck!]!, relat
 app.register(mercuriusAuth, { mode: 'directive', authDirective: directive, applyPolicy })
 ```
 
-Then tag fields: `field: T @auth(checks: [{ scope: "admin" }, { scope: "owner" }], relation: OR)`.
+Then tag fields or types: `field: T @auth(checks: [{ scope: "admin" }, { scope: "owner" }], relation: OR)`. A single check needs no list (`checks: { scope: "admin" }`), and the directive is `repeatable`: repeating it ANDs the policies, each enforced on its own.
 
 ## Mercurius external mode
 
@@ -84,19 +85,54 @@ app.register(mercuriusAuth, {
 })
 ```
 
+## Policies that cannot be evaluated
+
+A policy that cannot be evaluated denies its field with an error saying why, instead of falling back to something else:
+
+- a check `parseCheck` or `validate` rejects: its error;
+- a relation the mode does not define (`relation: XOR`, or `'AND'` in external mode): `relation must be either AND or OR` / `'and' or 'or'`;
+- an external `checks` that is there but is not a list: `checks must be an array` (an absent or `null` one is no checks, which denies);
+- a `prepare` that throws: its error, for every field of the request that needs it;
+- an `onDeny` that returns no `Error`, or a failure signalled with something other than an `Error`: an `InvalidPolicyError`.
+
+A check whose `evaluate` throws did not pass: under OR another check can still grant the field, and its error is the field's error only if the composition denies.
+
+Both modes also return `checkPolicies`, which resolves every policy the way the first request to reach it would, and throws one `InvalidPolicyError` listing each policy that cannot be evaluated — by type and field, and by position when a field carries several. Call it at startup, so a broken policy fails there instead of on every request to its field:
+
+```ts
+const { applyPolicy, sdl, directive, checkPolicies } = createDirectiveAuth({ parseCheck, evaluate })
+// …register mercurius, extend the schema with `sdl`, register mercurius-auth…
+await app.ready()
+checkPolicies(app.graphql.schema) // directive mode: the schema
+
+const external = createExternalAuth({ evaluate })
+external.checkPolicies(policy) // external mode: the policy map given to mercurius-auth
+```
+
+## Errors
+
+| Error                 | `code`                        | Raised when                                                                 |
+| --------------------- | ----------------------------- | --------------------------------------------------------------------------- |
+| `InvalidOptionsError` | `MER_AUTH_ERR_INVALID_OPTS`   | A composer is built with options it cannot work with (e.g. no `evaluate`).  |
+| `InvalidPolicyError`  | `MER_AUTH_ERR_INVALID_POLICY` | A policy cannot be evaluated (see above), and by `checkPolicies`.           |
+
+The codes are those `mercurius-auth` raises for the same mistakes.
+
 ## Options
 
 | Option           | Modes             | Description                                                                                             |
 | ---------------- | ----------------- | ------------------------------------------------------------------------------------------------------- |
-| `evaluate`       | both              | Judge one check against the prepared value → `boolean`.                                                  |
-| `prepare`        | both (optional)   | Derive a per-field value from the context once. A throw becomes the field's denial (distinct from deny). |
+| `evaluate`       | both              | Judge one check against the prepared value → `boolean`. A throw is a check that did not pass.            |
+| `prepare`        | both (optional)   | Derive the value the checks are judged against, once per request. A throw becomes the field's error.     |
 | `parseCheck`     | directive         | Parse one check from the directive AST; throw to reject a malformed check.                               |
 | `validate`       | external (opt.)   | Validate one host-supplied check; throw to reject.                                                       |
-| `onDeny`         | both (optional)   | The `Error` returned on denial. Default: generic `Unauthorized`.                                         |
-| `defaultRelation`| both (optional)   | Relation when a field omits its own. Default `'or'`.                                                     |
-| `enabled`        | both (optional)   | `false` bypasses enforcement. Default `true`.                                                            |
+| `onDeny`         | both (optional)   | `(context, info) => Error`, may be async: the error on denial. Default: a coded `Unauthorized`.          |
+| `defaultRelation`| both (optional)   | Relation when a field omits its own or gives `null`. Default `'or'`.                                     |
+| `run`            | both (optional)   | `'first'` stops at the check that decides, `'all'` runs every check concurrently. Default `'first'`.     |
 | `directive`      | directive (opt.)  | Directive name (default `auth`); seeds the `<Name>Relation` / `<Name>Check` type names.                  |
 | `checkInput`     | directive (opt.)  | SDL body of the `<Name>Check` input. Default `targets: [String!]!`.                                      |
+
+The options are checked when a composer is built: a wrong one throws `InvalidOptionsError`. To turn authorization off, don't register `mercurius-auth`; there is no switch that grants every field.
 
 ## License
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { compose, DEFAULT_RELATION, type Relation } from '../src/compose.ts'
+import { compose, DEFAULT_RELATION, DEFAULT_RUN, type Relation } from '../src/compose.ts'
+import { INVALID_OPTS_CODE } from '../src/errors.ts'
 
 const yes = () => true
 const no = () => false
@@ -56,11 +57,49 @@ describe('compose', () => {
     expect(await compose([no, no, inner2], 'or')(undefined)).toBe(true)
   })
 
-  it('evaluates every check (no short-circuit), so side effects always run', async () => {
+  it("defaults run to 'first' (matching @fastify/auth)", () => {
+    expect(DEFAULT_RUN).toBe('first')
+  })
+
+  it("run 'first' stops at the first check that decides: a pass under OR", async () => {
     const a = vi.fn(() => true)
     const b = vi.fn(() => true)
-    await compose([a, b], 'or')(undefined) // OR could stop after `a`, but must not
+    expect(await compose([a, b], 'or')(undefined)).toBe(true)
+    expect(a).toHaveBeenCalledOnce()
+    expect(b).not.toHaveBeenCalled()
+  })
+
+  it("run 'first' stops at the first check that decides: a failure under AND", async () => {
+    const a = vi.fn(() => false)
+    const b = vi.fn(() => true)
+    expect(await compose([a, b], 'and')(undefined)).toBe(false)
+    expect(b).not.toHaveBeenCalled()
+  })
+
+  it("run 'first' runs the checks in order, one at a time", async () => {
+    const order: string[] = []
+    const slow = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      order.push('slow')
+      return false
+    }
+    const fast = () => {
+      order.push('fast')
+      return false
+    }
+    expect(await compose([slow, fast], 'or')(undefined)).toBe(false)
+    expect(order).toEqual(['slow', 'fast'])
+  })
+
+  it("run 'all' evaluates every check, so side effects always run", async () => {
+    const a = vi.fn(() => true)
+    const b = vi.fn(() => true)
+    await compose([a, b], 'or', 'all')(undefined)
     expect(a).toHaveBeenCalledOnce()
     expect(b).toHaveBeenCalledOnce()
+  })
+
+  it('rejects checks that are not a list', () => {
+    expect(() => compose(yes as never)).toThrow(expect.objectContaining({ code: INVALID_OPTS_CODE }))
   })
 })
